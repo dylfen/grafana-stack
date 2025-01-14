@@ -1,9 +1,59 @@
 services:
   alloy:
+    image: grafana/alloy:latest
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    ports:
+      - 12345:12345
     volumes:
       - ./alloy/config/config.alloy:/etc/alloy/config.alloy
       - ./alloy/data:/var/lib/alloy/data
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - GF_SERVER_ROOT_URL=http://grafana.home.dylfen.dk/
+      - GF_INSTALL_PLUGINS=grafana-clock-panel, grafana-simple-json-datasource
+        GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        mkdir -p /etc/grafana/provisioning/datasources
+        cat <<EOF > /etc/grafana/provisioning/datasources/ds.yaml
+        apiVersion: 1
+        datasources:
+        - name: Loki
+          type: loki
+          access: proxy 
+          orgId: 1
+          url: http://loki:3100
+          basicAuth: false
+          isDefault: true
+          version: 1
+          editable: false
+        EOF
+        /run.sh
     ports:
-      - 12345:12345
-    image: grafana/alloy:latest
-    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+      - "3000:3000"
+    volumes:
+      - ./grafana/data:/var/lib/grafana
+
+  loki:
+    image: grafana/loki:2.9.2
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki/config/local-config.yaml:/etc/loki/local-config.yaml
+
+  mimir:
+    container_name: mimir
+    ports:
+      - 9009:9009
+    volumes:
+      - ./mimir/config/local.yaml:/etc/mimir/local.yaml
+    image: grafana/mimir:latest
+    command: --config.file=/etc/mimir/local.yaml
